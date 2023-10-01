@@ -1,16 +1,24 @@
-import { utils } from "ethers";
+import { Contract, utils } from "ethers";
 import Contracts from "./contracts";
 import Provider from "./connection/provider";
 import { Alchemy, Network, AlchemySubscription } from "alchemy-sdk";
 import NetworkUtils from "./utils/networkUtils";
 import sendWebHook from "./webhookParser";
-import { IndexerCfig, WalletCfig, networkName, trxResponse } from "./types/types";
-
+import {
+  IndexerCfig,
+  WalletCfig,
+  networkName,
+  trxResponse,
+} from "./types/types";
 
 export default class MainIndexer {
   public watchList: WalletCfig;
   public webhookUrl: string;
   private networks: networkName[];
+  private allConnections: { contracts: Contract[]; websockets: Alchemy[] } = {
+    contracts: [],
+    websockets: [],
+  };
 
   constructor(config: {
     networks: networkName[];
@@ -22,30 +30,33 @@ export default class MainIndexer {
     this.networks = config.networks;
   }
 
-  public init(): void {
+  public init(isReRun: boolean = false): void {
     this.networks.forEach((n) => {
-      this.runIndexer(n, this.watchList[n]);
+      this.runIndexer(n, this.watchList[n], isReRun);
     });
+
+    return;
   }
 
   protected async runIndexer(
     network: string,
-    conFig: IndexerCfig
+    conFig: IndexerCfig,
+    isReRun: boolean = false
   ): Promise<void> {
     const contracts = new Contracts(network);
     const provider = new Provider(network).provider;
 
-    const settings = {
-      apiKey: NetworkUtils.getRpcApiKey(network), // Replace with your Alchemy API Key
-      network: `eth-${network}` as Network, // Replace with your network
-    };
+    const websocket = this.websocketInstance(network);
 
-    const alchemy = new Alchemy(settings);
+    if (isReRun) {
+      this.stopListening();
+    }
     try {
       console.log("Started Watcher on " + network);
 
       conFig.tokens.forEach((token) => {
         const tokenContract = contracts.tokenContract(token.address);
+
         // Token Bloc Receiver
         tokenContract.on("Transfer", async (from, to, value, trx) => {
           if (
@@ -72,10 +83,15 @@ export default class MainIndexer {
             sendWebHook(data, this.webhookUrl);
           }
         });
+
+        // push all active listeners
+        this.allConnections.contracts.push(tokenContract);
+
+        console.log(JSON.stringify(tokenContract.listenerCount()));
       });
 
       // Native Transfer Bloc Receiver
-      alchemy.ws.on(
+      websocket.ws.on(
         {
           method: AlchemySubscription.PENDING_TRANSACTIONS,
           fromAddress: conFig.native, // Replace with address to recieve pending transactions from this address
@@ -100,15 +116,40 @@ export default class MainIndexer {
               text: "Native Transfer",
               meta: {
                 blockchain_symbol: NetworkUtils.getNetwork(network)?.currency,
-                blockchain: NetworkUtils.getNetwork(network)?.name as string
-              }
+                blockchain: NetworkUtils.getNetwork(network)?.name as string,
+              },
             };
             sendWebHook(data, this.webhookUrl);
           });
         }
       );
+      this.allConnections.websockets.push(websocket)
     } catch (error) {
       console.log(error);
     }
+  }
+
+  public stopListening() {
+    this.allConnections.contracts.forEach((connection) => {
+      connection.removeAllListeners();
+    });
+    this.allConnections.websockets.forEach((connection) => {
+      connection.ws.removeAllListeners();
+    });
+    this.allConnections = {
+      contracts: [],
+      websockets: []
+    }
+  }
+
+  public websocketInstance(network: string): Alchemy {
+    const settings = {
+      apiKey: NetworkUtils.getRpcApiKey(network), // Replace with your Alchemy API Key
+      network: `eth-${network}` as Network, // Replace with your network
+    };
+
+    const alchemy = new Alchemy(settings);
+
+    return alchemy;
   }
 }

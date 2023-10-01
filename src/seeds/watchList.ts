@@ -17,6 +17,13 @@ const watchList = [
   "0x690B9A9E9aa1C9dB991C7721a92d351Db4FaC990",
   "0xAFBa0bE1319c20c499507d18BEBF693E23dEb5F1",
   "0x95254aadAf215a98d58C994CBc3Cc22dfc9dcB25",
+  "0x3041CbD36888bECc7bbCBc0045E3B1f144466f5f",
+  "0x56Eddb7aa87536c09CCc2793473599fD21A8b17F",
+  "0xA9D1e08C7793af67e9d92fe308d5697FB81d3E43",
+  "0x0d4a11d5EEaaC28EC3F61d100daF4d40471f1852",
+  "0x11b815efB8f581194ae79006d24E0d814B7697F6",
+  "0x0c3DE458b51A11da7D4616f42F66C861e3859D3E",
+  "0x974CaA59e49682CdA0AD2bbe82983419A2ECC400"
 ];
 
 export default {
@@ -28,6 +35,12 @@ export default {
         symbol: "USD",
         watchList: watchList,
       },
+      {
+        address: "0xdac17f958d2ee523a2206206994597c13d831ec7",
+        name: "Tether USD",
+        symbol: "USD",
+        watchList: watchList,
+      }
     ],
     native: watchList,
   },
