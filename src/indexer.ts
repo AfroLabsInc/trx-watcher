@@ -1,7 +1,12 @@
 import { Contract, utils } from "ethers";
 import Contracts from "./contracts";
 import Provider from "./connection/provider";
-import { Alchemy, Network, AlchemySubscription } from "alchemy-sdk";
+import {
+  Alchemy,
+  Network,
+  AlchemySubscription,
+  WebSocketNamespace,
+} from "alchemy-sdk";
 import NetworkUtils from "./utils/networkUtils";
 import sendWebHook from "./webhookParser";
 import {
@@ -15,7 +20,10 @@ export default class MainIndexer {
   public watchList: WalletCfig;
   public webhookUrl: string;
   private networks: networkName[];
-  private allConnections: { contracts: Contract[]; websockets: Alchemy[] } = {
+  private allConnections: {
+    contracts: Contract[];
+    websockets: WebSocketNamespace[];
+  } = {
     contracts: [],
     websockets: [],
   };
@@ -38,6 +46,12 @@ export default class MainIndexer {
     return;
   }
 
+  /**
+   * Index a specific blockchain network
+   * @param network blockchain network. e.g 'mainnet', 'polygon'
+   * @param conFig Represents the configuration of the blockchain network watcher
+   * @param isReRun
+   */
   protected async runIndexer(
     network: string,
     conFig: IndexerCfig,
@@ -91,7 +105,7 @@ export default class MainIndexer {
       });
 
       // Native Transfer Bloc Receiver
-      websocket.ws.on(
+      const wsNameSpace = websocket.ws.on(
         {
           method: AlchemySubscription.PENDING_TRANSACTIONS,
           fromAddress: conFig.native, // Replace with address to recieve pending transactions from this address
@@ -123,23 +137,25 @@ export default class MainIndexer {
           });
         }
       );
-      this.allConnections.websockets.push(websocket)
+
+      this.allConnections.websockets.push(wsNameSpace);
     } catch (error) {
       console.log(error);
     }
   }
 
   public stopListening() {
-    this.allConnections.contracts.forEach((connection) => {
-      connection.removeAllListeners();
+
+    (Object.keys(this.allConnections) as ('contracts'| 'websockets')[]).forEach((t) => {
+      this.allConnections[t].forEach((connection) => {
+        connection.removeAllListeners();
+      });
     });
-    this.allConnections.websockets.forEach((connection) => {
-      connection.ws.removeAllListeners();
-    });
+    
     this.allConnections = {
       contracts: [],
-      websockets: []
-    }
+      websockets: [],
+    };
   }
 
   public websocketInstance(network: string): Alchemy {
