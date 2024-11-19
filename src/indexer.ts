@@ -15,11 +15,16 @@ import {
   networkName,
   trxResponse,
 } from "./types/types";
+import { ConnectionManager } from './utils/ConnectionManager';
+import { HealthMonitor } from './utils/HealthMonitor';
+import { RateLimiter } from './utils/RateLimiter';
+import { Logger, LogLevel } from './utils/Logger';
+import { CONFIG } from './config/config';
 
 export default class MainIndexer {
   public watchList: WalletCfig;
   public webhookUrl: string;
-  private networks: networkName[];
+  public networks: networkName[];
   private allConnections: {
     contracts: Contract[];
     websockets: WebSocketNamespace[];
@@ -27,6 +32,11 @@ export default class MainIndexer {
     contracts: [],
     websockets: [],
   };
+  private readonly connectionManager: ConnectionManager;
+  private readonly healthMonitor: HealthMonitor;
+  private readonly rateLimiter: RateLimiter;
+  private readonly logger: Logger;
+  private providers: Map<string, Provider> = new Map();
 
   constructor(config: {
     networks: networkName[];
@@ -36,6 +46,21 @@ export default class MainIndexer {
     this.watchList = config.watchList;
     this.webhookUrl = config.webHookUrl;
     this.networks = config.networks;
+    this.logger = Logger.getInstance();
+    this.connectionManager = new ConnectionManager(
+      CONFIG.retry.maxAttempts,
+      CONFIG.retry.delay,
+      this.logger
+    );
+    this.healthMonitor = new HealthMonitor(
+      CONFIG.healthCheck.interval,
+      this.logger
+    );
+    this.rateLimiter = new RateLimiter(
+      CONFIG.rateLimit.windowMs,
+      CONFIG.rateLimit.maxRequests,
+      this.logger
+    );
   }
 
   public init(isReRun: boolean = false): void {
@@ -58,7 +83,9 @@ export default class MainIndexer {
     isReRun: boolean = false
   ): Promise<void> {
     const contracts = new Contracts(network);
-    const provider = new Provider(network).provider;
+    const provider = new Provider(network);
+    
+    this.providers.set(network, provider);
 
     const websocket = this.websocketInstance(network);
 
@@ -72,7 +99,7 @@ export default class MainIndexer {
         const tokenContract = contracts.tokenContract(token.address);
 
         // Token Bloc Receiver
-        tokenContract.on("Transfer", async (from, to, value, trx) => {
+        tokenContract.on("Transfer", async (from: string, to: string, value: string, trx: any) => {
           if (
             token.watchList.find((a) => a === from) ||
             token.watchList.find((a) => a === to)
@@ -112,9 +139,9 @@ export default class MainIndexer {
           toAddress: conFig.native, // Replace with address to send  pending transactions to this address
         },
         (tx) => {
-          provider.once(tx.hash, async (confirmedTx) => {
+          provider.provider.once(tx.hash, async (confirmedTx: any) => {
             console.log(confirmedTx);
-            const { from, to, value, hash } = await provider.getTransaction(
+            const { from, to, value, hash } = await provider.provider.getTransaction(
               confirmedTx.transactionHash
             );
 
@@ -167,5 +194,19 @@ export default class MainIndexer {
     const alchemy = new Alchemy(settings);
 
     return alchemy;
+  }
+
+  async processTransaction(network: string, transaction: any): Promise<void> {
+    if (!(await this.rateLimiter.checkLimit(network))) {
+      throw new Error('Rate limit exceeded');
+    }
+
+    // Your existing transaction processing code here
+    
+    this.healthMonitor.updatePing();
+  }
+
+  public getProvider(network: string): Provider | undefined {
+    return this.providers.get(network);
   }
 }

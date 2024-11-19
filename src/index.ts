@@ -5,7 +5,7 @@ import { app } from "./express";
 dotenv.config();
 
 const indexer = new MainIndexer({
-  networks: ["mainnet", "goerli"],
+  networks: ["mainnet"],
   watchList,
   webHookUrl: process.env.WEBHOOK_ADDRESS as string,
 });
